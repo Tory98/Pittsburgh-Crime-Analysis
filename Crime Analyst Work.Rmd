@@ -1,0 +1,781 @@
+---
+title: "Crime Analyst Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(sf)
+library(lubridate)
+library(sp)
+library(stringr)
+```
+
+
+ideas: Track Illegal firearm seizures with economy?
+
+Interesting Datasets:
+Right-of-Way Permits and Traffic-Obstruction Permits
+Pittsburgh American Community Survey 2015, School Enrollment
+City Owned Publicly Available Properties
+City Revenues and Expenses
+Condemned and Dead-End Properties
+Pittsburgh PLI/DOMI Violations Report
+Police Incident Blotter (Archive)
+
+Police Community Outreach
+
+Police Officer Training
+
+
+```{r}
+arrestData<-read.csv("/Users/4victoria98/Downloads/Crime Analyst/arrestData.csv")
+View(arrestData)
+```
+
+
+```{r}
+municipalities<-st_read("/Users/4victoria98/Downloads/Capstone/Re_ Pittsburgh Park Conservancy Meeting/LandRecords_LANDRECORDS_OWNER_Municipalities.shp")
+```
+```{r}
+View(municipalities)
+```
+
+
+
+```{r}
+pittsburgh<-municipalities%>%filter(NAME=="PITTSBURGH")
+pittsburghT <- st_transform(pittsburgh, "NAD83")
+shpData <- arrestData%>%filter(!is.na(X)&!is.na(Y))
+lat<-shpData$Y
+long<-shpData$X
+coordinates(shpData)=c("X","Y")
+proj4string(shpData)<- CRS("+proj=longlat +datum=NAD83")
+```
+
+```{r}
+sfData<-st_as_sf(shpData)
+
+sfDataPitt<- sfData%>%sf::st_filter(pittsburghT)
+
+```
+
+
+```{r}
+
+vectX<-arrestData$X
+vectY<-arrestData$Y
+ggplot(data=pittsburghT)+geom_sf(fill="forestgreen")+
+    geom_sf(data = sfDataPitt,color="blue", alpha=.2, size = 1 )+
+    coord_sf(xlim = c(-80.1, -79.85), ylim = c(40.35, 40.51), expand = FALSE)+theme_bw()
+    #    shape = 23, fill = "darkred") 
+```
+```{r}
+sfDataPitt$date<-ymd(substr(sfDataPitt$ARRESTTIME, 1, 10))
+sfDataPitt$hour<-as.numeric(substr(sfDataPitt$ARRESTTIME, 12, 13))
+sfDataPitt$minute<-as.numeric(substr(sfDataPitt$ARRESTTIME, 15, 16))
+```
+
+```{r}
+min(sfDataPitt$date)
+max(sfDataPitt$date)
+```
+
+
+```{r}
+ggplot(sfDataPitt)+geom_bar(aes(x=hour))+labs(title="Total Number of Arrests Per Hour from October 1998-April 2023") +theme_bw()
+```
+
+
+```{r}
+sum(crimeData$hour==16)/ nrow(crimeData) + sum(crimeData$hour==17)/ nrow(crimeData) +sum(crimeData$hour==18)/ nrow(crimeData) +sum(crimeData$hour==1)/ nrow(crimeData)+sum(crimeData$hour==2)/ nrow(crimeData)+sum(crimeData$hour==4)/ nrow(crimeData) + sum(crimeData$hour==5)/ nrow(crimeData) +sum(crimeData$hour==6)/ nrow(crimeData)+ sum(crimeData$hour==7)/ nrow(crimeData)
+```
+
+
+```{r}
+mean(crimeData$Black)
+mean(crimeData$White)
+mean(crimeData$Other)
+mean(crimeData$Minor, na.rm = TRUE)
+mean(crimeData$Elderly, na.rm = TRUE)
+
+mean(crimeData$YA, na.rm = TRUE) + mean(crimeData$MA, na.rm = TRUE)
+
+mean(crimeData$YA, na.rm = TRUE) 
+mean(crimeData$MA, na.rm = TRUE)
+
+#sum(is.na(crimeData$Minor))
+```
+
+
+
+```{r}
+fred<-read_csv("/Users/4victoria98/Downloads/Crime Analyst/GDPC1.csv")
+View(fred)
+```
+
+```{r}
+int.rates<-read_csv("/Users/4victoria98/Downloads/Crime Analyst/INTDSRUSM193N.csv")
+#View(int.rates)
+```
+
+```{r}
+colnames(int.rates)<-c("Date", "rate")
+colnames(fred)<-c("Date", "GDP")
+
+plot1<-ggplot(sfDataPitt)+geom_bar(aes(x=date))+labs(title="Total Number of Crimes by Date from October 1998-April 2023") +theme_bw() 
+plot2<-plot1+geom_line(data=int.rates, aes(x=Date, y=rate))+expand_limits(y=c(0,6))
+plot2
+```
+
+#Add interest rates to crime data
+```{r}
+sfDataPitt$yearmonth<-ymd(paste(substring(sfDataPitt$date, 1,7), "-01", sep=""))
+colnames(sfDataPitt)[19]="Date"
+
+crimeData<-merge(sfDataPitt, int.rates, by="Date", all.x=TRUE)
+crimeData<-merge(crimeData, fred, by="Date", all.x=TRUE)
+
+crimeData$Code<-word(crimeData$OFFENSES, 1)
+```
+
+
+
+```{r}
+crimes.byDate<-as.data.frame(table(crimeData$Date))
+crimes.byDate
+
+crimes.byOffense<-as.data.frame(table(crimeData$INCIDENTNEIGHBORHOOD))
+crimes.byOffense
+```
+Rob
+Assault
+Voluntary Manslaughter
+```{r}
+mur<-grepl("Voluntary Manslaughter", crimeData$OFFENSES)
+
+for(i in 1:nrow(crimeData)){
+  if(mur[i]==TRUE)
+    print(crimeData$OFFENSES[i])
+}
+```
+
+
+#We see from this table that Data wasn't being reliably recorded before September of 2016
+
+```{r}
+crimes.byOffense<-crimes.byOffense%>%filter(Freq>20)
+crimes.byOffense
+```
+
+```{r}
+crimeData<-crimeData%>%filter(Date>=ymd("2016-09-01"))
+ggplot(crimeData)+geom_bar(aes(x=date, fill=RACE))+labs(title="Total Number of Crimes by Race from October 1998-April 2023") +theme_bw() 
+```
+
+
+
+```{r}
+crimeData$Year<-year(crimeData$Date)
+crimeData$Black<-ifelse(crimeData$RACE=="B",1,0)
+crimeData$White<-ifelse(crimeData$RACE=="W",1,0)
+crimeData$Other<-ifelse(crimeData$RACE!="W"&crimeData$RACE!="B",1,0)
+
+crimeData$Minor<-ifelse(crimeData$AGE<18,1,0)
+crimeData$YA<-ifelse(crimeData$AGE>18&crimeData$AGE<=30,1,0)
+crimeData$MA<-ifelse(crimeData$AGE<=65&crimeData$AGE>30,1,0)
+crimeData$Elderly<-ifelse(crimeData$AGE>65,1,0)
+crimeData$Arrest<-1
+```
+
+```{r}
+more.than2017<-crimeData%>%filter(Year>2016)
+agged.sum.data<-aggregate(cbind(Arrest, ViolentCrime)~Year, data=more.than2017, sum)
+agged.mean.data<-aggregate(cbind(Black, White, Other, Minor,YA,MA,Elderly, ViolentCrime)~Year, data=more.than2017, mean)
+agged.data<-merge(agged.sum.data, agged.mean.data, by="Year")
+
+#colnames(agged.data)<-c("Year","Total Arrests", "% Black", "% White", "% Other", "% < 18", "% 18-30", "% 31-65", "% 65 +")
+
+agged.data
+```
+
+```{r}
+agged.sum.data<-aggregate(cbind(Zone1, Zone2, Zone3, Zone4, Zone5, Zone6)~Year, data=more.than2017, mean)
+#colnames(agged.data2)<-c("Year","Total Arrests", "% Black", "% White", "% Other", "% < 18", "% 18-30", "% 31-65", "% 65 +")
+
+agged.sum.data
+```
+```{r}
+zone<-1:6
+means<-c(mean(crimeData$Zone1),mean(crimeData$Zone2),mean(crimeData$Zone3),mean(crimeData$Zone4),mean(crimeData$Zone5),mean(crimeData$Zone6))
+zone.means<-as.data.frame(matrix(data=c(zone, round(means*100, digits = 0)), ncol = 2))
+
+colnames(zone.means)<-c("Zone", "Percent of Arrests")
+zone.means
+
+```
+
+```{r}
+ggplot(zone.means, aes(x=Zone, y=`Percent of Arrests`))+geom_col()+labs(y="Percent of Total Arrests", x="Zone", title = "What Percentage of Municipal Arrests is Each Zone Accounting for?") + theme_bw()
+```
+
+```{r}
+mean_inc<-c(mean(zone1inc_F2$Income),mean(zone2inc_F2$Income),mean(zone3inc_F2$Income),mean(zone4inc_F2$Income),mean(zone5inc_F2$Income),mean(zone6inc_F2$Income))
+mean_pop<-c(mean(zone1inc_F2$Population),mean(zone2inc_F2$Population),mean(zone3inc_F2$Population),mean(zone4inc_F2$Population),mean(zone5inc_F2$Population),mean(zone6inc_F2$Population))
+
+zone.chars<-as.data.frame(matrix(data=c(zone, round(mean_inc, digits = 0), round(mean_pop, digits = 0)), ncol = 3))
+
+colnames(zone.chars)<-c("Zone", "Mean Tract Income", "Mean Tract Population")
+zone.chars
+```
+```{r}
+write_csv(zone.chars, "/Users/4victoria98/Downloads/zone_chars.csv")
+```
+
+
+#NOTES: NUMBER OF ARRESTS HAS BEEN FALLING STEADILY SINCE 2017. ARRESTS IN 2022 WERE JUST LESS THAN 1/2 OF ARRESTS IN 2017 (48.69%)
+        CONVERSELY, THE PROPORTION OF ARRESTS THAT HAVE BEEN OF BLACK CITIZENS HAS RISEN BY 18.79%
+        
+```{r}
+write_csv(agged.data, "/Users/4victoria98/Downloads/sum.stats.csv")
+```
+
+```{r}
+agged.data
+```
+
+
+```{r}
+agged.data<-agged.data%>%filter(Year>2016&Year<2023)
+
+summary(lm(Black.x~Year, agged.data))
+summary(lm(White.x~Year, agged.data))
+```
+
+#Words for Violent crime:
+  #Rob
+Assault
+Voluntary Manslaughter
+  
+```{r}
+crimeData$ViolentCrime<-ifelse(grepl("Rob", crimeData$OFFENSES)|grepl("Assault", crimeData$OFFENSES)| grepl("Voluntary Manslaughter", crimeData$OFFENSES),1,0)
+```
+
+```{r}
+community.engagement<-read_csv("/Users/4victoria98/Downloads/Crime Analyst/Community_Outreach.csv")
+```
+
+```{r}
+police_zones<-st_read("/Users/4victoria98/Downloads/Crime Analyst/Police_Zones/Police_Zones.shp")
+```
+
+```{r}
+ggplot(data=police_zones)+geom_sf(aes(fill=as.factor(zone)))
+
+police_zonesT <- st_transform(police_zones, "NAD83")
+ggplot(data=police_zonesT)+geom_sf(aes(fill=as.factor(zone)))
+
+```
+```{r}
+library(tidycensus)
+
+# list of variables to be extracted
+
+demographic_vars <- c(
+Population = "B02001_001",
+Hispanic = "B03002_013",
+White = "B02001_002",
+Black = "B02009_001",
+Asian = "B02015_001",
+Median_Inc = "B06011_001"
+)
+
+# access the census data
+
+Allegheny <- get_acs(geography = "tract", 
+              variables = demographic_vars, 
+              state = "PA", 
+              county = "ALLEGHENY",
+              survey = "acs5",
+              year = 2020)
+
+
+# Make this badboy a dataframe
+
+Allegheny <- as.data.frame(Allegheny)
+
+```
+
+```{r}
+library(tigris)
+Allegheny_Tracts <- tracts("PA", "Allegheny", year= 2020)
+
+
+Black <- subset(Allegheny, variable == "Black") %>% select(GEOID, estimate)
+Black <- setNames(Black, c("GEOID","Black"))
+
+Population <- subset(Allegheny, variable == "Population") %>% select(GEOID, estimate)
+Population <- setNames(Population, c("GEOID","Population"))
+
+Income <- subset(Allegheny, variable == "Median_Inc") %>% select(GEOID, estimate)
+Income <- setNames(Income, c("GEOID","Income"))
+
+# now use the SF package to merge these things back to the tract map based on GEOID
+
+Combined <- geo_join (Allegheny_Tracts, Black, "GEOID", "GEOID" )
+Combined <- geo_join (Combined, Population, "GEOID", "GEOID" )
+Combined <- geo_join (Combined, Income, "GEOID", "GEOID" )
+
+# generate Percent black
+Combined$Pct_Black <- Combined$Black/Combined$Population
+
+# get rid of NA
+Combined[is.na(Combined)] <- 0
+
+```
+
+```{r}
+Combined %>%
+  ggplot(aes(x = Pct_Black, y = Income)) + 
+  geom_point() +
+  geom_smooth(se=TRUE, method="lm", span=.5, formula=y ~ poly(x, 3, raw=TRUE),colour="red")
+```
+```{r}
+# Median Income
+
+ggplot(Combined, aes(fill = Income))+
+  geom_sf(, colour = NA) +
+  scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + 
+  ggtitle("Median Income in Tract")
+```
+ggplot(data=pittsburghT)+geom_sf(fill="forestgreen")+
+    geom_sf(data = sfDataPitt,color="blue", alpha=.2, size = 1 )+
+    coord_sf(xlim = c(-80.1, -79.85), ylim = c(40.35, 40.51), expand = FALSE)+theme_bw()
+    #    shape = 23, fill = "darkred") 
+
+```{r}
+pittsburgh_census <- st_transform(Combined, "NAD83")
+
+pittsburgh_census1<- pittsburgh_census%>%sf::st_filter(pittsburghT,.predicate = st_within)
+
+pittsburgh_census<- pittsburgh_census%>%sf::st_filter(pittsburghT)
+
+ggplot(data=pittsburghT)+
+  geom_sf(fill="green", color=NA) +geom_sf(data=pittsburgh_census, aes(fill=Income), alpha=.4)+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+ggplot(data=pittsburghT)+
+  geom_sf(fill="green", color=NA) +geom_sf(data=pittsburgh_census1, aes(fill=Income), alpha=.4)+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+```{r}
+zone1<-police_zonesT%>%filter(zone==1)
+zone1inc<-pittsburgh_census%>%sf::st_filter(zone1) 
+ggplot(data=zone1)+
+  geom_sf(fill="green", color=NA) +geom_sf(data=zone1inc, aes(fill=Income), alpha=.4)+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+```
+
+
+
+#TAKE OUT TRACTS WITH POPULATION 0 AND LOOK AGAIN
+```{r}
+zone1<-police_zonesT%>%filter(zone==1)
+pittsburgh_census$id<-1:nrow(pittsburgh_census)
+pittsburgh_census$id<-as.character(pittsburgh_census$id)
+
+
+zone1inc<-pittsburgh_census%>%sf::st_filter(zone1) 
+
+zone1inc_F<-zone1inc%>%filter(Population>0) 
+
+zone1inc_F2<-zone1inc_F%>% filter(!id%in%c("136","137","97","9","90","8", "96"))
+
+ggplot(data=zone1)+
+  geom_sf(color="red", fill="green") +geom_sf(data=zone1inc_F, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+ggplot(data=zone1)+
+  geom_sf(fill="green",color=NA) +geom_sf(data=zone1inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+
+```{r}
+zone2<-police_zonesT%>%filter(zone==2)
+
+
+zone2inc<-pittsburgh_census%>%sf::st_filter(zone2) 
+
+zone2inc_F<-zone2inc%>%filter(Population>0) 
+
+zone2inc_F2<-zone2inc_F%>% filter(!id%in%c("141", "69","113","57","36","37","70","162"))  #,"97","9","90","8", "96")) NOT: 31, 35, 148
+
+ggplot(data=zone2)+
+  geom_sf(color="red", fill="green") +geom_sf(data=zone2inc_F, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+ggplot(data=zone2)+
+  geom_sf(fill=NA,color=NA) +geom_sf(data=zone2inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+
+```{r}
+ggplot(data=zone3)+
+  geom_sf(color="red", fill="green") +geom_sf(data=zone3inc_F, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+```
+
+```{r}
+zone3<-police_zonesT%>%filter(zone==3)
+
+
+zone3inc<-pittsburgh_census%>%sf::st_filter(zone3) 
+
+zone3inc_F<-zone3inc%>%filter(Population>0) 
+
+ggplot(data=zone3)+
+ geom_sf(fill="green",color=NA) +geom_sf(data=zone3inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+zone3inc_F2<-zone3inc_F%>% filter(!id%in%c("159", "161","153", "151","77","49","27","47","48","61","80","124")) #NOT: 143, 144, 134
+
+
+ggplot(data=zone3)+
+ geom_sf(fill=NA,color=NA) +geom_sf(data=zone3inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+
+```{r}
+zone4<-police_zonesT%>%filter(zone==4)
+
+
+zone4inc<-pittsburgh_census%>%sf::st_filter(zone4) 
+
+zone4inc_F<-zone4inc%>%filter(Population>0) 
+
+ggplot(data=zone4)+
+ geom_sf(fill="green",color=NA) +geom_sf(data=zone4inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+zone4inc_F2<-zone4inc_F%>% filter(!id%in%c("155","92","93","91","89","10","104","108","151", "5", "41", "163","164","68", "31","29","166","6","74","82","11","83","3")) #NOT: 85, 88, 141,145, 57, 67, 30,32,33,34, 26,23
+
+
+ggplot(data=zone4)+
+ geom_sf(fill=NA,color=NA) +geom_sf(data=zone4inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+
+for(i in 1:nrow(pittsburgh_census)){
+ print(lengths(st_intersects(crimeData$geometry[1], pittsburgh_census$geometry[i])))
+  print(st_intersects(crimeData$geometry[1], pittsburgh_census$geometry[i]))
+  print(i)
+}
+nrow(crimeData)
+```{r}
+#View(crimeData)
+length(st_intersects(crimeData$geometry[1], pittsburgh_census$geometry[i])[[1]])
+st_intersects(crimeData$geometry[1], pittsburgh_census$geometry[20])
+length(st_intersects(crimeData$geometry[1], pittsburgh_census$geometry[20])[[1]])
+
+crimeData$tract_income<-0
+crimeData$tractPop<-0
+crimeData$tractID<-0
+crimeData$pct_black<-0
+
+crime<-1
+
+for(crime in 1:100){
+  for(i in 1:nrow(pittsburgh_census)){
+    if(lengths(st_intersects(crimeData$geometry[crime], pittsburgh_census$geometry[i]))==1){
+      crimeData[crime,33]<-pittsburgh_census$Income[i]
+      crimeData[crime,34]<-pittsburgh_census$Population[i]
+      crimeData[crime,35]<-pittsburgh_census$id[i]
+      crimeData[crime,36]<-pittsburgh_census$Pct_Black[i]
+    }
+  }
+  print(crime)
+}
+```
+
+
+```{r}
+zone5<-police_zonesT%>%filter(zone==5)
+
+
+zone5inc<-pittsburgh_census%>%sf::st_filter(zone5) 
+
+zone5inc_F<-zone5inc%>%filter(Population>0) 
+
+ggplot(data=zone5)+
+ geom_sf(fill="green",color=NA) +geom_sf(data=zone5inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+zone5inc_F2<-zone5inc_F%>% filter(!id%in%c("142", "94","38","22","146","41", "167","122","42","92","35","57")) #NOT: 14, 131,3, 29, 12,13
+
+
+ggplot(data=zone5)+
+ geom_sf(fill=NA,color=NA) +geom_sf(data=zone5inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+
+```{r}
+ggplot(data=zone6)+
+ geom_sf(fill="green",color=NA) 
+```
+
+
+```{r}
+zone6<-police_zonesT%>%filter(zone==6)
+
+
+zone6inc<-pittsburgh_census%>%sf::st_filter(zone6) 
+
+zone6inc_F<-zone6inc%>%filter(Population>0) 
+
+ggplot(data=zone6)+
+ geom_sf(fill="green",color=NA) +geom_sf(data=zone6inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+zone6inc_F2<-zone6inc_F%>% filter(!id%in%c("18","21","144","156","25","78","129","54","50","51","52","56","58","60","46","53","55","48","118","134","76", "79","87")) #NOT:160, 124,59
+
+
+ggplot(data=zone6)+
+ geom_sf(fill=NA,color=NA) +geom_sf(data=zone6inc_F2, aes(fill=id), alpha=.4)#+scale_fill_viridis_c(option = "magma",begin = 0, end = .99)  + ggtitle("Median Income in Tract")
+
+```
+```{r}
+
+```
+
+
+
+```{r}
+income_data<-rbind(zone1inc_F2,zone2inc_F2,zone3inc_F2,zone4inc_F2,zone5inc_F2,zone6inc_F2)
+police_zonesT$char_zone<-as.character(police_zonesT$zone)
+
+annotation <- data.frame(
+   x = c(-80.02, -79.97,-79.99, -79.927, -79.918, -80.045),
+   y = c(40.47,40.455, 40.425, 40.435, 40.474, 40.444),
+   label = c("Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6")
+)
+
+ggplot()+
+ geom_sf(data=income_data,color="grey", aes(fill=Income), alpha=.7)+geom_sf(data=police_zonesT, color="black", fill=NA)+theme_bw()+geom_text(data=annotation, aes(x=x, y = y, label=label))+labs(title="Median Income in US Census Tracts Across Police Zones",x="",y="")
+
+```
+
+```{r}
+crimeData$Zone1<-ifelse(crimeData$INCIDENTZONE==1,1,0)
+crimeData$Zone2<-ifelse(crimeData$INCIDENTZONE==2,1,0)
+crimeData$Zone3<-ifelse(crimeData$INCIDENTZONE==3,1,0)
+crimeData$Zone4<-ifelse(crimeData$INCIDENTZONE==4,1,0)
+crimeData$Zone5<-ifelse(crimeData$INCIDENTZONE==5,1,0)
+crimeData$Zone6<-ifelse(crimeData$INCIDENTZONE==6,1,0)
+
+agged.sum.data1<-aggregate(cbind(Black, White, Other, Arrest, Zone1,Zone2,Zone3,Zone4,Zone5,Zone6, ViolentCrime)~date, data=crimeData, sum)
+agged.mean.data1<-aggregate(cbind(Black, White, Other, Minor,YA,MA,Elderly, ViolentCrime)~date, data=crimeData, mean)
+agged.data1<-merge(agged.mean.data1, agged.sum.data1, by="date")
+agged.data1
+
+agged.data1$Year<-year(agged.data1$date)
+agged.data1$Month<-month(agged.data1$date)
+agged.data1$wday<-wday(agged.data1$date, label=TRUE)
+
+agged.data1
+```
+
+```{r}
+tw17plus<-agged.data1%>%filter(Year>2016&Year<2023)
+summary(lm(ViolentCrime.y~Year, agged.data1))
+
+tw17plusyr<-agged.data%>%filter(Year>2016&Year<2023)
+summary(lm(ViolentCrime.x~Year, agged.data))
+```
+
+
+
+```{r}
+sum(agged.data1$Zone1)
+sum(agged.data1$Zone2)
+sum(agged.data1$Zone3)
+sum(agged.data1$Zone4)
+sum(agged.data1$Zone5)
+sum(agged.data1$Zone6)
+
+mean(zone1inc_F2$Income)
+mean(zone2inc_F2$Income)
+mean(zone3inc_F2$Income)
+mean(zone4inc_F2$Income)
+mean(zone5inc_F2$Income)
+mean(zone6inc_F2$Income)
+```
+
+
+```{r}
+all_arrests.model<-lm(Arrest~Zone2+Zone3+Zone4+Zone5+Zone6+Year, agged.data1)
+summary(all_arrests.model)
+```
+
+
+```{r}
+zone1.byDate<-crimeData%>%filter(INCIDENTZONE==1)
+
+agged.sum.data1<-aggregate(cbind(Black, White, Other, Arrest, ViolentCrime)~date, data=crimeData, sum)
+agged.mean.data1<-aggregate(cbind(Black, White, Other, Minor,YA,MA,Elderly, ViolentCrime)~date, data=crimeData, mean)
+agged.data1<-merge(agged.mean.data1, agged.sum.data1, by="date")
+agged.data1$Year<-year(agged.data1$date)
+agged.data1$Month<-month(agged.data1$date)
+agged.data1$wday<-wday(agged.data1$date, label=TRUE)
+agged.data1$Zone<-1
+
+Zones.df<-agged.data1
+
+for(i in 2:6){
+  zone.byDate<-crimeData%>%filter(INCIDENTZONE==i)
+  
+  agged.sum.data1<-aggregate(cbind(Black, White, Other, Arrest, ViolentCrime)~date, data=crimeData, sum)
+  agged.mean.data1<-aggregate(cbind(Black, White, Other, Minor,YA,MA,Elderly, ViolentCrime)~date, data=crimeData, mean)
+  agged.dataX<-merge(agged.mean.data1, agged.sum.data1, by="date")
+  agged.dataX$Year<-year(agged.dataX$date)
+  agged.dataX$Month<-month(agged.dataX$date)
+  agged.dataX$wday<-wday(agged.dataX$date, label=TRUE)
+  
+  agged.dataX$Zone<-i
+  
+  Zones.df<-rbind(Zones.df, agged.dataX)
+}
+
+Zones.df
+```
+```{r}
+
+crimeData$zone_inc<-NA
+crimeData$zone_inc[crimeData$INCIDENTZONE==1]<-mean(zone1inc_F2$Income)
+crimeData$zone_inc[crimeData$INCIDENTZONE==2]<-mean(zone2inc_F2$Income)
+crimeData$zone_inc[crimeData$INCIDENTZONE==3]<-mean(zone3inc_F2$Income)
+crimeData$zone_inc[crimeData$INCIDENTZONE==4]<-mean(zone4inc_F2$Income)
+crimeData$zone_inc[crimeData$INCIDENTZONE==5]<-mean(zone5inc_F2$Income)
+crimeData$zone_inc[crimeData$INCIDENTZONE==6]<-mean(zone6inc_F2$Income)
+
+```
+
+```{r}
+mean_inc
+```
+
+
+```{r}
+samp<-sample_n(agged.data1, 800)
+ggplot(samp,aes(x=date, y=ViolentCrime.x))+geom_point()+geom_smooth(method="lm")+ ylim(0,.7)
+```
+
+```{r}
+vi.arrests.byZone<-aggregate(ViolentCrime~INCIDENTZONE, crimeData, sum)
+vi.arrests.byZone$scaled_vc<-  vi.arrests.byZone$ViolentCrime/mean_pop
+vi.arrests.byZone
+```
+
+
+```{r}
+crimeData$Month<-month(crimeData$date)
+crimeData$spring<-ifelse(crimeData$Month>=3&crimeData$Month<=5,1,0)
+crimeData$summer<-ifelse(crimeData$Month>=6&crimeData$Month<=8,1,0)
+crimeData$fall<-ifelse(crimeData$Month>=9&crimeData$Month<=11,1,0)
+crimeData$winter<-ifelse(crimeData$Month>=12|crimeData$Month<=2,1,0)
+
+violent_arrests.model<-lm(ViolentCrime~as.character(INCIDENTZONE)+Year+winter+fall+spring+White, crimeData)
+summary(violent_arrests.model)
+```
+```{r}
+summary(violent_arrests.model)$coefficients[,"Std. Error"]
+```
+
+```{r}
+ses<-summary(violent_arrests.model)$coefficients[,"Std. Error"]
+stargazer(violent_arrests.model, ci=TRUE,ci.level=0.95, notes = "Intervals Below Coefficients are 95% Confidence Intervals",type="text")
+```
+
+
+```{r}
+stargazer(violent_arrests.model, dep.var.labels="Proportion of Violent-Crime Arrests",covariate.labels=c("Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6", "OSC", "Year", "Winter","Fall", "Spring", "White" ), ci=TRUE,ci.level=0.95, notes = "Intervals Below Coefficients are 95% Confidence Intervals", type="html")
+```
+
+
+```{r}
+gdp.crime<-aggregate(cbind(Arrest, ViolentCrime)~Date, data=crimeData, sum)
+gdp.crime<-merge(gdp.crime, fred, by="Date")
+
+gdp.crime$Year<-year(gdp.crime$Date)
+gdp.crime$Month<-month(gdp.crime$Date)
+
+
+gdp.crime$spring<-ifelse(gdp.crime$Month>=3&gdp.crime$Month<=5,1,0)
+gdp.crime$summer<-ifelse(gdp.crime$Month>=6&gdp.crime$Month<=8,1,0)
+gdp.crime$fall<-ifelse(gdp.crime$Month>=9&gdp.crime$Month<=11,1,0)
+gdp.crime$winter<-ifelse(gdp.crime$Month>=12|gdp.crime$Month<=2,1,0)
+
+gdp.crime
+```
+```{r}
+install.packages("mFilter")
+library(mFilter)
+```
+
+
+```{r}
+gdp.crime$log.gdp<-log(gdp.crime$GDP)
+
+gdp.hp<-hpfilter(gdp.crime$log.gdp, freq = 6.25,type = "lambda")
+cyc<-gdp.hp$cycle
+trend<-gdp.hp$trend
+
+cyc
+trend
+
+gdp.cor<-lm(Arrest~GDP+Year, gdp.crime)
+summary(gdp.cor)
+```
+
+```{r}
+ggplot(gdp.crime.int)+geom_line(aes(x=Date, y=GDP))
+```
+
+
+```{r}
+gdp.crime.int<-merge(gdp.crime, int.rates, by="Date")
+
+gdp.int.cor<-lm(Arrest~GDP+Year+rate, gdp.crime.int)
+summary(gdp.int.cor)
+```
+```{r}
+agged.data1
+```
+
+
+```{r}
+crimeData$Zone1<-ifelse(crimeData$INCIDENTZONE==1,1,0)
+
+
+community.engagement$Zone.Num<-as.numeric(word(community.engagement$ZONE,2))
+
+community.engagement$Zone1<-ifelse(community.engagement$Zone.Num==1,1,0)
+community.engagement$Zone2<-ifelse(community.engagement$Zone.Num==2,1,0)
+community.engagement$Zone3<-ifelse(community.engagement$Zone.Num==3,1,0)
+community.engagement$Zone4<-ifelse(community.engagement$Zone.Num==4,1,0)
+community.engagement$Zone5<-ifelse(community.engagement$Zone.Num==5,1,0)
+community.engagement$Zone6<-ifelse(community.engagement$Zone.Num==6,1,0)
+
+community.engagement$date<-mdy(community.engagement$`Event Date`)
+
+community.engagement$num<-1
+```
+
+```{r}
+com.eng<-aggregate(cbind(Zone1, Zone2,Zone3,Zone4,Zone5,Zone6,num)~date, data=community.engagement, sum)
+com.eng
+```
+
+```{r}
+com.eng.crime<-merge(agged.data1,com.eng, all.x=TRUE)
+com.eng.crime
+```
+
+```{r}
+ggplot(agged.data1,aes(x=date, y=Arrest))+geom_point()+geom_smooth(method="lm")
+```
+
